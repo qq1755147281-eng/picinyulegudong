@@ -1,0 +1,618 @@
+<html lang="zh-CN"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D旋转正方体</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.140.1/build/three.min.js"></script>
+    <!-- Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+</head>
+<body class="flex flex-col items-center min-h-screen text-white">
+    <audio id="click-sound" preload="auto">
+        <source src="https://assets.mixkit.co/active_storage/sfx/2018/2018-preview.mp3" type="audio/mpeg">
+    </audio>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'blue-custom': '#1E40AF',
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .text-shadow {
+                text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+            }
+            .btn-hover {
+                transition: all 0.3s ease;
+                position: relative;
+                overflow: hidden;
+                animation: glow 2s infinite alternate;
+            }
+            .btn-hover::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: -100%;
+                width: 100%;
+                height: 100%;
+                background: linear-gradient(90deg, transparent, rgba(100, 149, 237, 0.3), transparent);
+                transition: all 0.6s ease;
+            }
+            .btn-hover:hover::before {
+                left: 100%;
+            }
+            .btn-hover:hover {
+                transform: translateY(-2px) scale(1.02);
+                box-shadow: 0 0 20px rgba(100, 149, 237, 0.8), 0 0 40px rgba(100, 149, 237, 0.6);
+                border-color: #87CEFA;
+            }
+            .btn-active {
+                transform: translateY(0);
+                animation: brightGlow 0.5s ease;
+                box-shadow: 0 0 30px rgba(173, 216, 230, 0.9), 0 0 60px rgba(173, 216, 230, 0.7), 0 0 90px rgba(173, 216, 230, 0.5);
+                border-color: #FFFFFF;
+            }
+            @keyframes glow {
+                from {
+                    box-shadow: 0 0 10px rgba(100, 149, 237, 0.5), 0 0 20px rgba(100, 149, 237, 0.3);
+                    border-color: #6495ED;
+                }
+                to {
+                    box-shadow: 0 0 15px rgba(173, 216, 230, 0.6), 0 0 30px rgba(173, 216, 230, 0.4);
+                    border-color: #87CEFA;
+                }
+            }
+            @keyframes brightGlow {
+                0% {
+                    box-shadow: 0 0 15px rgba(173, 216, 230, 0.6), 0 0 30px rgba(173, 216, 230, 0.4);
+                }
+                50% {
+                    box-shadow: 0 0 40px rgba(255, 255, 255, 0.9), 0 0 80px rgba(255, 255, 255, 0.7), 0 0 120px rgba(255, 255, 255, 0.5);
+                    border-color: #FFFFFF;
+                }
+                100% {
+                    box-shadow: 0 0 20px rgba(173, 216, 230, 0.8), 0 0 40px rgba(173, 216, 230, 0.6);
+                    border-color: #87CEFA;
+                }
+            }
+        }
+    </style>
+    <style>
+        body {
+            background-color: #000000;
+            overflow-x: hidden;
+        }
+        #canvas-container {
+            width: 60vw;
+            height: 60vw;
+            max-width: 400px;
+            max-height: 400px;
+        }
+    </style>
+
+
+    <!-- 标题区域 -->
+    <header class="w-full text-center pt-16 pb-8">
+        <h1 class="text-4xl font-bold mb-2 text-shadow" style="font-family: 'Kaiti', 'STKaiti', 'KaiTi', sans-serif;">股东查询器</h1>
+        <p class="text-xl opacity-80" style="font-size: 18px; margin-top: 12px; font-family: 'Kaiti', 'STKaiti', 'KaiTi', sans-serif;">先锋的投入开启确权模式</p>
+    </header>
+
+    <!-- 3D正方体区域 -->
+    <main class="w-full flex justify-center my-8">
+        <div id="canvas-container" class="relative"></div>
+    </main>
+
+    <!-- 按钮区域 -->
+    <footer class="w-full px-6 pb-10 space-y-4 flex flex-col items-center">
+        <button id="shareholder-btn" class="w-[80%] py-3 bg-gradient-to-r from-gray-900 to-black border-2 border-blue-custom text-white rounded-md btn-hover font-medium tracking-wide text-shadow">股东进度</button>
+        <button id="system-btn" class="w-[80%] py-3 bg-gradient-to-r from-gray-900 to-black border-2 border-blue-custom text-white rounded-md btn-hover font-medium tracking-wide text-shadow">系统介绍</button>
+        <button id="contact-btn" class="w-[80%] py-3 bg-gradient-to-r from-gray-900 to-black border-2 border-blue-custom text-white rounded-md btn-hover font-medium tracking-wide text-shadow">联系我们</button>
+    </footer>
+
+    <!-- 模态框 - 股东进度 -->
+    <div id="shareholder-modal" class="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4 hidden">
+        <div class="bg-gradient-to-b from-blue-800 to-blue-900 rounded-xl shadow-2xl w-[95%] max-h-[90vh] overflow-hidden pb-8">
+            <div class="flex justify-between items-center p-4 border-b border-blue-700">
+                <div>
+                    <h2 class="text-2xl font-bold text-white">股东进度查询</h2>
+                    <p class="text-blue-300 text-sm">详情</p>
+                </div>
+                <button class="close-modal text-white text-2xl">×</button>
+            </div>
+            <div class="p-4 text-white">
+                
+                <div class="overflow-x-auto mb-6">
+                    <table class="w-full border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-blue-700">
+                                <th class="border border-blue-600 px-1 py-1 text-center w-[15%]">序列</th>
+                                <th class="border border-blue-600 px-2 py-1 text-center w-[35%]">姓名</th>
+                                <th class="border border-blue-600 px-2 py-1 text-center w-[30%]">时间</th>
+                                <th class="border border-blue-600 px-1 py-1 text-center w-[15%]">股份</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="bg-blue-800/50">
+                                <td class="border border-blue-600 px-2 py-1 text-center">1</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">粉丝</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">2026-01-29</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">1</td>
+                            </tr>
+                            <tr class="bg-blue-800/30">
+                                <td class="border border-blue-600 px-2 py-1 text-center">2</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">李四</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">01-18</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">1,200</td>
+                            </tr>
+                            <tr class="bg-blue-800/50">
+                                <td class="border border-blue-600 px-2 py-1 text-center">3</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">王五</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">01-20</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">2,000</td>
+                            </tr>
+                            <tr class="bg-blue-800/30">
+                                <td class="border border-blue-600 px-2 py-1 text-center">4</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">赵六</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">01-22</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">800</td>
+                            </tr>
+                            <tr class="bg-blue-800/50">
+                                <td class="border border-blue-600 px-2 py-1 text-center">5</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">孙七</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">01-25</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">1,000</td>
+                            </tr>
+                            <tr class="bg-blue-800/30">
+                                <td class="border border-blue-600 px-2 py-1 text-center">6</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">周八</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">01-28</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">1,300</td>
+                            </tr>
+                            <tr class="bg-blue-800/50">
+                                <td class="border border-blue-600 px-2 py-1 text-center">7</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">吴九</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">02-01</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">900</td>
+                            </tr>
+                            <tr class="bg-blue-800/30">
+                                <td class="border border-blue-600 px-2 py-1 text-center">8</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">郑十</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">02-05</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">1,100</td>
+                            </tr>
+                            <tr class="bg-blue-800/50">
+                                <td class="border border-blue-600 px-2 py-1 text-center">9</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">刘十一</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">02-08</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">700</td>
+                            </tr>
+                            <tr class="bg-blue-800/30">
+                                <td class="border border-blue-600 px-2 py-1 text-center">10</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">陈十二</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">02-10</td>
+                                <td class="border border-blue-600 px-2 py-1 text-center">1,400</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <p class="text-center text-blue-300 font-semibold mt-6" style="font-size: 20px;">当前股东进度为3%</p>
+
+                <!-- 左右按钮 -->
+                <div class="flex justify-center items-center space-x-4 mt-8">
+                    <button id="prev-page" class="px-4 py-1 bg-blue-800 rounded-full text-sm flex items-center justify-center">
+                        <i class="fa fa-chevron-left mr-1"></i> 上一页
+                    </button>
+                    <span class="text-xs text-blue-300">第 1/100 页</span>
+                    <button id="next-page" class="px-4 py-1 bg-blue-800 rounded-full text-sm flex items-center justify-center">
+                        下一页 <i class="fa fa-chevron-right ml-1"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模态框 - 软系统介绍 -->
+    <div id="system-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-gradient-to-b from-blue-800 to-blue-900 rounded-xl shadow-2xl w-[85%] max-h-[50vh] overflow-y-auto">
+            <div class="flex justify-between items-center p-4 border-b border-blue-700">
+                <h2 class="text-2xl font-bold text-white animate-pulse-yellow-glow">软系统介绍</h2>
+                <button class="close-modal text-white text-2xl">×</button>
+            </div>
+            <div class="p-4 text-white text-sm">
+                <p class="mb-3">派信娱乐生态的股东查询系统</p>
+                <h3 class="text-base font-semibold mb-2">核心功能</h3>
+                <ul class="list-disc pl-5 mb-3 space-y-1 text-xs">
+                    <li>实时公开股东数据</li>
+                    <li>及时了解生态进度</li>
+                    <li>搭建股东信任体系</li>
+                    <li>入股投资分析</li>
+                    <li>开放股东自治模式</li>
+                </ul>
+                <h3 class="text-base font-semibold mb-2">系统核心</h3>
+                <p class="mb-3 text-xs">展示生态公募状态   为广大先锋提供简单高效查询    生态持续更新中</p>
+                <div class="bg-blue-800/50 p-2 rounded-lg mt-2">
+                    <p class="text-center text-blue-300 text-xs">参考码143658认证 · 9H456F</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模态框 - 联系我们 -->
+    <div id="contact-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-gradient-to-b from-blue-800 to-blue-900 rounded-xl shadow-2xl w-[85%] max-h-[50vh] overflow-y-auto">
+            <div class="flex justify-between items-center p-4 border-b border-blue-700">
+                <h2 class="text-2xl font-bold text-white">联系我们</h2>
+                <button class="close-modal text-white text-2xl">×</button>
+            </div>
+            <div class="p-4 text-white text-sm">
+                <p class="mb-3 text-center">如有疑惑  随时咨询</p>
+                <div class="space-y-2">
+                    <div class="flex items-center">
+                        <div class="w-6 h-6 bg-blue-700 rounded-full flex items-center justify-center mr-3">
+                            <i class="fa fa-envelope text-xs"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-blue-300">邮箱</p>
+                            <p class="text-xs">pixin.yule@protonmail.com</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-6 h-6 bg-blue-700 rounded-full flex items-center justify-center mr-3">
+                            <i class="fa fa-phone text-xs"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-blue-300">电报群</p>
+                            <p class="text-xs">搜索pixinyule314</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-6 h-6 bg-blue-700 rounded-full flex items-center justify-center mr-3">
+                            <i class="fa fa-map-marker text-xs"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-blue-300">推特</p>
+                            <p class="text-xs truncate">维护中</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-6 h-6 bg-blue-700 rounded-full flex items-center justify-center mr-3">
+                            <i class="fa fa-clock-o text-xs"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-blue-300">TELTLK官方社群</p>
+                            <p class="text-xs">3111171248</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3 pt-2 border-t border-blue-700">
+                    <p class="text-center text-blue-300 text-xs">生态团队持续跟进中</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Three.js 3D正方体实现
+        document.addEventListener('DOMContentLoaded', function() {
+            // 创建场景
+            const scene = new THREE.Scene();
+            
+            // 创建相机
+            const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+            camera.position.z = 6;
+            
+            // 创建渲染器
+            const container = document.getElementById('canvas-container');
+            const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+            
+            // 创建正方体
+            const geometry = new THREE.BoxGeometry(3, 3, 3);
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0x1E40AF,
+                wireframe: false
+            });
+            const cube = new THREE.Mesh(geometry, material);
+            scene.add(cube);
+            
+            // 创建黄色圆环
+            const torusGeometry = new THREE.TorusGeometry(3.5, 0.15, 16, 100);
+            const torusMaterial = new THREE.MeshBasicMaterial({ color: 0xFFD700 });
+            const torus = new THREE.Mesh(torusGeometry, torusMaterial);
+            scene.add(torus);
+
+            // 创建"股东"文字（使用HTML覆盖层实现）
+            const textOverlay = document.createElement('div');
+            textOverlay.id = 'text-overlay';
+            textOverlay.style.position = 'absolute';
+            textOverlay.style.top = '50%';
+            textOverlay.style.left = '50%';
+            textOverlay.style.transform = 'translate(-50%, -50%)';
+            textOverlay.style.fontSize = '24px';
+            textOverlay.style.fontFamily = 'Kaiti, STKaiti, KaiTi, sans-serif';
+            textOverlay.style.color = '#FFD700';
+            textOverlay.style.fontWeight = 'bold';
+            textOverlay.style.zIndex = '10';
+            textOverlay.style.pointerEvents = 'none';
+            textOverlay.style.textShadow = '0 0 10px rgba(255, 215, 0, 0.8)';
+            textOverlay.textContent = '股东';
+            container.appendChild(textOverlay);
+
+            // 创建"确权"文字（使用HTML覆盖层实现）
+            const textOverlay2 = document.createElement('div');
+            textOverlay2.id = 'text-overlay-2';
+            textOverlay2.style.position = 'absolute';
+            textOverlay2.style.top = '50%';
+            textOverlay2.style.left = '50%';
+            textOverlay2.style.transform = 'translate(-50%, -50%)';
+            textOverlay2.style.fontSize = '24px';
+            textOverlay2.style.fontFamily = 'Kaiti, STKaiti, KaiTi, sans-serif';
+            textOverlay2.style.color = '#FFD700';
+            textOverlay2.style.fontWeight = 'bold';
+            textOverlay2.style.zIndex = '10';
+            textOverlay2.style.pointerEvents = 'none';
+            textOverlay2.style.textShadow = '0 0 15px rgba(255, 215, 0, 0.8)';
+            textOverlay2.textContent = '确权';
+            container.appendChild(textOverlay2);
+            
+            // 动画循环
+            function animate() {
+                requestAnimationFrame(animate);
+                
+                // 旋转正方体
+                cube.rotation.y += 0.02;
+                cube.rotation.x += 0.005;
+                
+                // 旋转圆环
+                torus.rotation.y += 0.01;
+                torus.rotation.x += 0.005;
+
+                // 获取正方体的位置和旋转
+                const cubePosition = { x: 0, y: 0, z: 0 };
+                const cubeRotation = {
+                    x: cube.rotation.x,
+                    y: cube.rotation.y,
+                    z: cube.rotation.z
+                };
+
+                // 计算左上角和右下角的世界坐标
+                const halfSize = 1.5; // 正方体边长的一半
+                const topLeftCorner = {
+                    x: cubePosition.x - halfSize * Math.cos(cubeRotation.y),
+                    y: cubePosition.y + halfSize,
+                    z: cubePosition.z - halfSize * Math.sin(cubeRotation.y)
+                };
+                const bottomRightCorner = {
+                    x: cubePosition.x + halfSize * Math.cos(cubeRotation.y),
+                    y: cubePosition.y - halfSize,
+                    z: cubePosition.z + halfSize * Math.sin(cubeRotation.y)
+                };
+
+                // 旋转"股东"文字覆盖层（围绕左上角顺时针）
+                const textOverlay = document.getElementById('text-overlay');
+                if (textOverlay) {
+                    const radius = 80; // 旋转半径
+                    const angle = Date.now() * 0.001; // 顺时针旋转角度
+                    const x = topLeftCorner.x + Math.cos(angle) * radius;
+                    const z = topLeftCorner.z + Math.sin(angle) * radius;
+                    textOverlay.style.transform = `translate(-50%, -50%) translate3d(${x}px, 0, ${z}px)`;
+                }
+
+                // 旋转"确权"文字覆盖层（围绕黄色圆环上的一个点）
+                const textOverlay2 = document.getElementById('text-overlay-2');
+                if (textOverlay2) {
+                    // 计算黄色圆环上的一个固定点（相对于圆环的旋转）
+                    const torusRadius = 3.5; // 圆环的半径
+                    const anchorAngle = Math.PI / 4; // 锚定的角度（45度）
+                    const torusGlobalAngle = anchorAngle + torus.rotation.y; // 考虑圆环自身的旋转
+
+                    // 计算锚点在世界坐标系中的位置
+                    const anchorX = Math.cos(torusGlobalAngle) * torusRadius * 30; // 30是一个缩放因子，将Three.js单位转换为像素
+                    const anchorZ = Math.sin(torusGlobalAngle) * torusRadius * 30;
+
+                    // 让文字围绕这个锚点旋转
+                    const orbitRadius = 40; // 文字围绕锚点的旋转半径
+                    const orbitAngle = Date.now() * 0.002; // 旋转速度
+                    const x = anchorX + Math.cos(orbitAngle) * orbitRadius;
+                    const z = anchorZ + Math.sin(orbitAngle) * orbitRadius;
+
+                    textOverlay2.style.transform = `translate(-50%, -50%) translate3d(${x}px, 0, ${z}px)`;
+                }
+                
+                renderer.render(scene, camera);
+            }
+            
+            // 响应窗口大小变化
+            window.addEventListener('resize', function() {
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            });
+            
+            // 开始动画
+            animate();
+            
+            // 按钮点击效果
+            const buttons = document.querySelectorAll('button');
+            buttons.forEach(button => {
+                button.addEventListener('click', function() {
+                // 播放音效
+                const clickSound = document.getElementById('click-sound');
+                clickSound.currentTime = 0;
+                clickSound.play().catch(e => console.log("Audio play failed:", e));
+                    this.classList.add('btn-active');
+                    setTimeout(() => {
+                        this.classList.remove('btn-active');
+                    }, 200);
+                    
+                    // 显示对应的模态框
+                    const buttonId = this.id;
+                    if (buttonId === 'shareholder-btn') {
+                        document.getElementById('shareholder-modal').classList.remove('hidden');
+                    } else if (buttonId === 'system-btn') {
+                        document.getElementById('system-modal').classList.remove('hidden');
+                    } else if (buttonId === 'contact-btn') {
+                        document.getElementById('contact-modal').classList.remove('hidden');
+                    }
+                });
+                
+                // 关闭模态框
+                const closeButtons = document.querySelectorAll('.close-modal');
+                closeButtons.forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const modal = this.closest('[id$="-modal"]');
+                        modal.classList.add('hidden');
+                    });
+                });
+                
+                // 点击模态框外部关闭功能已移除
+                
+                // 左右按钮分页功能
+                const shareholderModal = document.getElementById('shareholder-modal');
+                if (shareholderModal) {
+                    let currentPage = 1;
+                    const totalPages = 100;
+                    const pageInfo = shareholderModal.querySelector('.text-xs.text-blue-300');
+                    const prevBtn = document.getElementById('prev-page');
+                    const nextBtn = document.getElementById('next-page');
+                    const tableBody = shareholderModal.querySelector('tbody');
+
+                    
+                    // 生成表格数据
+                    function generateTableData(page) {
+                        const startNum = (page - 1) * 10 + 1;
+                        const endNum = startNum + 9;
+                        let html = '';
+                        
+                        for (let i = startNum; i <= endNum; i++) {
+                            const isEven = i % 2 === 0;
+                            
+                            let name = '确认中';
+                            let date = '0';
+                            let shares = '0';
+                            
+                            // 根据序列设置特定内容
+                            if (i === 1) {
+                                name = '毕**阳';
+                                date = '2026-01-26';
+                                shares = '1';
+                            } else if (i === 2) {
+                                name = '薛**虎';
+                                date = '2026-01-26';
+                                shares = '1';
+                            } else if (i === 3) {
+                                name = '张**承';
+                                date = '2026-01-28';
+                                shares = '1';
+                            } else if (i === 4) {
+                                name = '姜**斌';
+                                date = '2026-01-31';
+                                shares = '1';
+                            } else if (i === 5) {
+                                name = '翟**英';
+                                date = '2026-02-01';
+                                shares = '1';
+                            } else if (i === 6) {
+                                name = '曲**婷';
+                                date = '2026-02-08';
+                                shares = '1';
+                            } else if (i === 7) {
+                                name = '李**祯';
+                                date = '2026-02-08';
+                                shares = '1';
+                            } else if (i === 8) {
+                                name = '赵**义';
+                                date = '2026-02-24';
+                                shares = '1';
+                            } else if (i === 9) {
+                                name = '魏**炳';
+                                date = '2026-02-26';
+                                shares = '1';
+                            } else if (i === 10) {
+                                name = '贾**敏';
+                                date = '2026-02-27';
+                                shares = '1';
+                            } else if (i === 11) {
+                                name = '晓**怜';
+                                date = '2026-02-27';
+                                shares = '1';
+                            } else if (i === 12) {
+                                name = '鸣**政';
+                                date = '2026-02-27';
+                                shares = '1';
+                            }
+                            
+                            html += `
+                                <tr class="${isEven ? 'bg-blue-800/30' : 'bg-blue-800/50'}">
+                                    <td class="border border-blue-600 px-1 py-1 text-center">${i}</td>
+                                    <td class="border border-blue-600 px-2 py-1 text-center">${name}</td>
+                                    <td class="border border-blue-600 px-2 py-1 text-center">${date}</td>
+                                    <td class="border border-blue-600 px-1 py-1 text-center">${shares}</td>
+                                </tr>
+                            `;
+                        }
+                        
+                        return html;
+                    }
+                    
+                    // 更新表格数据
+                    function updateTable() {
+                        tableBody.innerHTML = generateTableData(currentPage);
+                    }
+                    
+                    // 更新页码显示
+                    function updatePageInfo() {
+                        pageInfo.textContent = `第 ${currentPage}/${totalPages} 页`;
+                        prevBtn.disabled = currentPage === 1;
+                        nextBtn.disabled = currentPage === totalPages;
+                        
+                        if (prevBtn.disabled) {
+                            prevBtn.classList.add('opacity-50');
+                        } else {
+                            prevBtn.classList.remove('opacity-50');
+                        }
+                        
+                        if (nextBtn.disabled) {
+                            nextBtn.classList.add('opacity-50');
+                        } else {
+                            nextBtn.classList.remove('opacity-50');
+                        }
+                    }
+                    
+
+                    
+                    // 上一页按钮点击事件
+                    prevBtn.addEventListener('click', function() {
+                        if (currentPage > 1) {
+                            currentPage--;
+                            updateTable();
+                            updatePageInfo();
+                        }
+                    });
+                    
+                    // 下一页按钮点击事件
+                    nextBtn.addEventListener('click', function() {
+                        if (currentPage < totalPages) {
+                            currentPage++;
+                            updateTable();
+                            updatePageInfo();
+                        }
+                    });
+                    
+                    // 初始化
+                    updateTable();
+                    updatePageInfo();
+                }
+            });
+        });
+    </script>
+
+
+</body></html>
